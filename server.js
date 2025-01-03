@@ -127,7 +127,7 @@ const adminSchema = new mongoose.Schema({
 }, { timestamps: true });
 
 const Admin = mongoose.model('Admin', adminSchema);
-// Signup Endpoint
+   
 app.post('/api/signup', async (req, res) => {
   const { fullName, email, phoneNumber, referrerPin } = req.body;
 
@@ -156,12 +156,17 @@ app.post('/api/signup', async (req, res) => {
       phoneNumber,
       password,
       referralDetails: {
-        referralCode: referrer ? referrer.username : null, // Set referralCode to referrer’s username
-        referrer: referrer ? referrer._id : null, // Store referrer’s ObjectId for reference
+        referralCode: referrer ? referrer.username : null,
+        referrer: referrer ? referrer._id : null,
       },
     });
 
     await newUser.save();
+
+    // Log SMTP details
+    console.log('Preparing to send email...');
+    console.log('SMTP_EMAIL:', process.env.SMTP_EMAIL);
+    console.log('Recipient Email:', email);
 
     // Send Email
     await transporter.sendMail({
@@ -170,49 +175,24 @@ app.post('/api/signup', async (req, res) => {
       subject: 'Welcome to Our Platform',
       text: `Hello ${fullName},\n\nYour account has been created.\nUsername: ${username}\nPassword: ${password}\nReferral Code: ${referrer ? referrer.username : 'None'}\n\nThank you!`,
     });
-
+    
+    console.log('Email sent successfully.');
     res.json({ success: true });
   } catch (err) {
+    console.error('Error occurred:', err);
+
     if (err.code === 11000) {
-      // Duplicate key error (e.g., email or username already exists)
       return res.status(400).json({ success: false, message: 'Email or username already exists. Please use a different one.' });
     }
-    console.error(err);
+
+    if (err.response) {
+      console.error('SMTP Error Response:', err.response);
+    }
+    if (err.responseCode) {
+      console.error('SMTP Error Response Code:', err.responseCode);
+    }
+
     res.status(500).json({ success: false, message: 'Server Error' });
-  }
-});
-
-// Google Signup Endpoint
-app.post('/api/google-signup', async (req, res) => {
-  const { credential, phoneNumber } = req.body;
-
-  try {
-    const { email, name } = jwt.decode(credential); // Decode JWT from Google
-
-    const { username, password } = generateCredentials();
-
-    const newUser = new User({
-      fullName: name,
-      username,
-      email,
-      phoneNumber,
-      password,
-    });
-
-    await newUser.save();
-
-    // Send Email
-    await transporter.sendMail({
-      from: process.env.SMTP_EMAIL,
-      to: email,
-      subject: 'Welcome to Our Platform',
-      text: `Hello ${name},\n\nYour account has been created.\nUsername: ${username}\nPassword: ${password}\n\nThank you!`,
-    });
-
-    res.json({ success: true });
-  } catch (err) {
-    console.error(err);
-    res.status(500).json({ success: false, message: 'Google Signup Error' });
   }
 });
 
