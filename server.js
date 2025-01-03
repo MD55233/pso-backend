@@ -16,10 +16,11 @@ const transporter = nodemailer.createTransport({
   host: "smtp.hostinger.com",
   port: 465,
   secure: true,
-  auth: {
-      user: 'process.env.SMTP_EMAIL',
-      pass: 'process.env.SMTP_PASSWORD',
-  },
+ auth: {
+    user: process.env.SMTP_EMAIL,
+    pass: process.env.SMTP_PASSWORD,
+},
+
 
 });
 
@@ -169,32 +170,18 @@ app.post('/api/signup', async (req, res) => {
     console.log('Recipient Email:', email);
 
     // Send Email
-    await transporter.sendMail({
-      from: process.env.SMTP_EMAIL,
-      to: email,
-      subject: 'Welcome to Our Platform',
-      text: `Hello ${fullName},\n\nYour account has been created.\nUsername: ${username}\nPassword: ${password}\nReferral Code: ${referrer ? referrer.username : 'None'}\n\nThank you!`,
-    });
-    
-    console.log('Email sent successfully.');
-    res.json({ success: true });
-  } catch (err) {
-    console.error('Error occurred:', err);
-
-    if (err.code === 11000) {
-      return res.status(400).json({ success: false, message: 'Email or username already exists. Please use a different one.' });
-    }
-
-    if (err.response) {
-      console.error('SMTP Error Response:', err.response);
-    }
-    if (err.responseCode) {
-      console.error('SMTP Error Response Code:', err.responseCode);
-    }
-
-    res.status(500).json({ success: false, message: 'Server Error' });
-  }
+   await transporter.sendMail({
+  from: process.env.SMTP_EMAIL,
+  to: email,
+  subject: 'Welcome to Our Platform',
+  text: `Hello ${fullName},\n\nYour account has been created.\nUsername: ${username}\nPassword: ${password}\nReferral Code: ${referrer ? referrer.username : 'None'}\n\nThank you!`,
+}).then(() => {
+  console.log('Email sent successfully');
+}).catch(err => {
+  console.error('Error sending email:', err.message);
+  throw err;
 });
+
 
 // Route to fetch all data of a user based on username
 app.get('/api/user/:username', async (req, res) => {
