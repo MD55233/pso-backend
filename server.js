@@ -172,6 +172,7 @@ app.post("/api/signup", async (req, res) => {
     // Save user to database
     await newUser.save();
 
+
     // Generate Email Content
     const emailHtml = render(
       LaikoStarWelcomeEmail({
@@ -182,13 +183,19 @@ app.post("/api/signup", async (req, res) => {
       })
     );
 
+
     // Send Welcome Email
     try {
       await transporter.sendMail({
         from: process.env.SMTP_EMAIL,
         to: email,
+
         subject: "Welcome to LaikoStar - Your Account Details",
         html: emailHtml, // Use the generated HTML content
+
+        subject: "Welcome to Our Platform",
+        text: `Hello ${fullName},\n\nYour account has been created.\nUsername: ${username}\nPassword: ${password}\nReferral Code: ${referrer ? referrer.username : "None"}\n\nThank you!`,
+
       });
 
       console.log("Email sent successfully");
