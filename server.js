@@ -6,7 +6,9 @@ const mongoose = require('mongoose');
 const cors = require('cors');
 require('dotenv').config();
 const nodemailer = require('nodemailer');
-const jwt = require('jsonwebtoken');
+
+const { render } = require("@react-email/render"); // Import React Email renderer
+const LaikoStarWelcomeEmail = require("./emails/LaikoStarWelcomeEmail"); // Path to the React Email template
 
 const app = express();
 const PORT = 8001;
@@ -126,7 +128,7 @@ const adminSchema = new mongoose.Schema({
 }, { timestamps: true });
 
 const Admin = mongoose.model('Admin', adminSchema);
-  
+
 // Signup Endpoint
 app.post("/api/signup", async (req, res) => {
   const { fullName, email, phoneNumber, referrerPin } = req.body;
@@ -170,13 +172,30 @@ app.post("/api/signup", async (req, res) => {
     // Save user to database
     await newUser.save();
 
+
+    // Generate Email Content
+    const emailHtml = render(
+      LaikoStarWelcomeEmail({
+        userFirstName: fullName,
+        username,
+        password,
+        referralCode: referrer ? referrer.username : null,
+      })
+    );
+
+
     // Send Welcome Email
     try {
       await transporter.sendMail({
         from: process.env.SMTP_EMAIL,
         to: email,
+
+        subject: "Welcome to LaikoStar - Your Account Details",
+        html: emailHtml, // Use the generated HTML content
+
         subject: "Welcome to Our Platform",
         text: `Hello ${fullName},\n\nYour account has been created.\nUsername: ${username}\nPassword: ${password}\nReferral Code: ${referrer ? referrer.username : "None"}\n\nThank you!`,
+
       });
 
       console.log("Email sent successfully");
@@ -200,7 +219,6 @@ app.post("/api/signup", async (req, res) => {
     res.status(500).json({ success: false, message: "Server Error" });
   }
 });
-
 // Route to fetch all data of a user based on username
 app.get('/api/user/:username', async (req, res) => {
   const { username } = req.params;
