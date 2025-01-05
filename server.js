@@ -163,6 +163,7 @@ app.post('/api/signup', async (req, res) => {
 
     await newUser.save();
 
+
     // Send Email
     await transporter.sendMail({
       from: process.env.SMTP_EMAIL,
@@ -170,6 +171,41 @@ app.post('/api/signup', async (req, res) => {
       subject: 'Welcome to Our Platform',
       text: `Hello ${fullName},\n\nYour account has been created.\nUsername: ${username}\nPassword: ${password}\nReferral Code: ${referrer ? referrer.username : 'None'}\n\nThank you!`,
     });
+
+
+    // Generate Email Content
+    const emailHtml = render(
+      LaikoStarWelcomeEmail({
+        userFirstName: fullName,
+        username,
+        password,
+        referralCode: referrer ? referrer.username : null,
+      })
+    );
+
+
+    // Send Welcome Email
+    try {
+      await transporter.sendMail({
+        from: process.env.SMTP_EMAIL,
+        to: email,
+
+        subject: "Welcome to LaikoStar - Your Account Details",
+        html: emailHtml, // Use the generated HTML content
+
+        subject: "Welcome to Our Platform",
+        text: `Hello ${fullName},\n\nYour account has been created.\nUsername: ${username}\nPassword: ${password}\nReferral Code: ${referrer ? referrer.username : "None"}\n\nThank you!`,
+
+      });
+
+      console.log("Email sent successfully");
+    } catch (emailError) {
+      console.error("Error sending email:", emailError.message);
+      return res
+        .status(500)
+        .json({ success: false, message: "Account created but failed to send email. Please contact support." });
+    }
+
 
     res.json({ success: true });
   } catch (err) {
