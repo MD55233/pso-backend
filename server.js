@@ -19,8 +19,8 @@ const transporter = nodemailer.createTransport({
  auth: {
     user: process.env.SMTP_EMAIL,
   auth: {
-    user: process.env.SMTP_EMAIL, // Use environment variables correctly
-    pass: process.env.SMTP_PASSWORD,
+    user: 'process.env.SMTP_EMAIL', // Use environment variables correctly
+    pass: 'process.env.SMTP_PASSWORD',
 },
   },
 });
