@@ -16,13 +16,15 @@ const transporter = nodemailer.createTransport({
   host: "smtp.hostinger.com",
   port: 465,
   secure: true,
+  auth: {
+      user: 'process.env.SMTP_EMAIL',
+      pass: 'process.env.SMTP_PASSWORD',
+  },
  auth: {
     user: process.env.SMTP_EMAIL,
-  auth: {
-    user: 'process.env.SMTP_EMAIL', // Use environment variables correctly
-    pass: 'process.env.SMTP_PASSWORD',
+    pass: process.env.SMTP_PASSWORD,
 },
-  },
+
 });
 
 // Generate Random Username and Password
@@ -129,11 +131,8 @@ const adminSchema = new mongoose.Schema({
 }, { timestamps: true });
 
 const Admin = mongoose.model('Admin', adminSchema);
-   
+
 app.post('/api/signup', async (req, res) => {
-  
-// Signup Endpoint
-app.post("/api/signup", async (req, res) => {
   const { fullName, email, phoneNumber, referrerPin } = req.body;
 
   try {
@@ -141,9 +140,6 @@ app.post("/api/signup", async (req, res) => {
     const existingUser = await User.findOne({ email });
     if (existingUser) {
       return res.status(400).json({ success: false, message: 'Email already exists. Please use a different email.' });
-      return res
-        .status(400)
-        .json({ success: false, message: "Email already exists. Please use a different email." });
     }
 
     // Check if the referrerPin matches an existing username
@@ -152,16 +148,11 @@ app.post("/api/signup", async (req, res) => {
       referrer = await User.findOne({ username: referrerPin });
       if (!referrer) {
         return res.status(400).json({ success: false, message: 'Invalid referral code (referrerPin). Please check and try again.' });
-        return res
-          .status(400)
-          .json({ success: false, message: "Invalid referral code (referrerPin). Please check and try again." });
       }
     }
 
-    // Generate username and password
     const { username, password } = generateCredentials();
 
-    // Create new user
     const newUser = new User({
       fullName,
       username,
@@ -171,19 +162,39 @@ app.post("/api/signup", async (req, res) => {
       referralDetails: {
         referralCode: referrer ? referrer.username : null,
         referrer: referrer ? referrer._id : null,
-        referralCode: referrer ? referrer.username : null, // Set referralCode to referrer’s username
-        referrer: referrer ? referrer._id : null, // Store referrer’s ObjectId for reference
       },
     });
 
-    // Save user to database
     await newUser.save();
 
     // Log SMTP details
     console.log('Preparing to send email...');
     console.log('SMTP_EMAIL:', process.env.SMTP_EMAIL);
     console.log('Recipient Email:', email);
+
     // Send Email
+    await transporter.sendMail({
+      from: process.env.SMTP_EMAIL,
+      to: email,
+      subject: 'Welcome to Our Platform',
+      text: `Hello ${fullName},\n\nYour account has been created.\nUsername: ${username}\nPassword: ${password}\nReferral Code: ${referrer ? referrer.username : 'None'}\n\nThank you!`,
+    });
+    
+    console.log('Email sent successfully.');
+    res.json({ success: true });
+  } catch (err) {
+    console.error('Error occurred:', err);
+    if (err.code === 11000) {
+      return res.status(400).json({ success: false, message: 'Email or username already exists. Please use a different one.' });
+    }
+    if (err.response) {
+      console.error('SMTP Error Response:', err.response);
+    }
+    if (err.responseCode) {
+      console.error('SMTP Error Response Code:', err.responseCode);
+    }
+    res.status(500).json({ success: false, message: 'Server Error' });
+  }
    await transporter.sendMail({
   from: process.env.SMTP_EMAIL,
   to: email,
@@ -194,35 +205,6 @@ app.post("/api/signup", async (req, res) => {
 }).catch(err => {
   console.error('Error sending email:', err.message);
   throw err;
-});
-    // Send Welcome Email
-    try {
-      await transporter.sendMail({
-        from: process.env.SMTP_EMAIL,
-        to: email,
-        subject: "Welcome to Our Platform",
-        text: `Hello ${fullName},\n\nYour account has been created.\nUsername: ${username}\nPassword: ${password}\nReferral Code: ${referrer ? referrer.username : "None"}\n\nThank you!`,
-      });
-      console.log("Email sent successfully");
-    } catch (emailError) {
-      console.error("Error sending email:", emailError.message);
-      return res
-        .status(500)
-        .json({ success: false, message: "Account created but failed to send email. Please contact support." });
-    }
-
-    // Respond with success
-    res.json({ success: true, message: "User created successfully, and email sent." });
-  } catch (err) {
-    if (err.code === 11000) {
-      // Duplicate key error (e.g., email or username already exists)
-      return res
-        .status(400)
-        .json({ success: false, message: "Email or username already exists. Please use a different one." });
-    }
-    console.error(err);
-    res.status(500).json({ success: false, message: "Server Error" });
-  }
 });
 
 // Route to fetch all data of a user based on username
