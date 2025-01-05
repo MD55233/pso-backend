@@ -6,9 +6,7 @@ const mongoose = require('mongoose');
 const cors = require('cors');
 require('dotenv').config();
 const nodemailer = require('nodemailer');
-
-const { render } = require("@react-email/render"); // Import React Email renderer
-const LaikoStarWelcomeEmail = require("./emails/LaikoStarWelcomeEmail"); // Path to the React Email template
+const jwt = require('jsonwebtoken');
 
 const app = express();
 const PORT = 8001;
@@ -19,9 +17,10 @@ const transporter = nodemailer.createTransport({
   port: 465,
   secure: true,
   auth: {
-    user: process.env.SMTP_EMAIL, // Use environment variables correctly
-    pass: process.env.SMTP_PASSWORD,
+      user: 'process.env.SMTP_EMAIL',
+      pass: 'process.env.SMTP_PASSWORD',
   },
+
 });
 
 // Generate Random Username and Password
@@ -128,18 +127,15 @@ const adminSchema = new mongoose.Schema({
 }, { timestamps: true });
 
 const Admin = mongoose.model('Admin', adminSchema);
-
 // Signup Endpoint
-app.post("/api/signup", async (req, res) => {
+app.post('/api/signup', async (req, res) => {
   const { fullName, email, phoneNumber, referrerPin } = req.body;
 
   try {
     // Check if email already exists
     const existingUser = await User.findOne({ email });
     if (existingUser) {
-      return res
-        .status(400)
-        .json({ success: false, message: "Email already exists. Please use a different email." });
+      return res.status(400).json({ success: false, message: 'Email already exists. Please use a different email.' });
     }
 
     // Check if the referrerPin matches an existing username
@@ -147,16 +143,12 @@ app.post("/api/signup", async (req, res) => {
     if (referrerPin) {
       referrer = await User.findOne({ username: referrerPin });
       if (!referrer) {
-        return res
-          .status(400)
-          .json({ success: false, message: "Invalid referral code (referrerPin). Please check and try again." });
+        return res.status(400).json({ success: false, message: 'Invalid referral code (referrerPin). Please check and try again.' });
       }
     }
 
-    // Generate username and password
     const { username, password } = generateCredentials();
 
-    // Create new user
     const newUser = new User({
       fullName,
       username,
@@ -169,49 +161,61 @@ app.post("/api/signup", async (req, res) => {
       },
     });
 
-    // Save user to database
     await newUser.save();
 
-    // Generate Email Content
-    const emailHtml = render(
-      LaikoStarWelcomeEmail({
-        userFirstName: fullName,
-        username,
-        password,
-        referralCode: referrer ? referrer.username : null,
-      })
-    );
+    // Send Email
+    await transporter.sendMail({
+      from: process.env.SMTP_EMAIL,
+      to: email,
+      subject: 'Welcome to Our Platform',
+      text: `Hello ${fullName},\n\nYour account has been created.\nUsername: ${username}\nPassword: ${password}\nReferral Code: ${referrer ? referrer.username : 'None'}\n\nThank you!`,
+    });
 
-    // Send Welcome Email
-    try {
-      await transporter.sendMail({
-        from: process.env.SMTP_EMAIL,
-        to: email,
-        subject: "Welcome to LaikoStar - Your Account Details",
-        html: emailHtml, // Use the generated HTML content
-      });
-
-      console.log("Email sent successfully");
-    } catch (emailError) {
-      console.error("Error sending email:", emailError.message);
-      return res
-        .status(500)
-        .json({ success: false, message: "Account created but failed to send email. Please contact support." });
-    }
-
-    // Respond with success
-    res.json({ success: true, message: "User created successfully, and email sent." });
+    res.json({ success: true });
   } catch (err) {
     if (err.code === 11000) {
       // Duplicate key error (e.g., email or username already exists)
-      return res
-        .status(400)
-        .json({ success: false, message: "Email or username already exists. Please use a different one." });
+      return res.status(400).json({ success: false, message: 'Email or username already exists. Please use a different one.' });
     }
     console.error(err);
-    res.status(500).json({ success: false, message: "Server Error" });
+    res.status(500).json({ success: false, message: 'Server Error' });
   }
 });
+
+// Google Signup Endpoint
+app.post('/api/google-signup', async (req, res) => {
+  const { credential, phoneNumber } = req.body;
+
+  try {
+    const { email, name } = jwt.decode(credential); // Decode JWT from Google
+
+    const { username, password } = generateCredentials();
+
+    const newUser = new User({
+      fullName: name,
+      username,
+      email,
+      phoneNumber,
+      password,
+    });
+
+    await newUser.save();
+
+    // Send Email
+    await transporter.sendMail({
+      from: process.env.SMTP_EMAIL,
+      to: email,
+      subject: 'Welcome to Our Platform',
+      text: `Hello ${name},\n\nYour account has been created.\nUsername: ${username}\nPassword: ${password}\n\nThank you!`,
+    });
+
+    res.json({ success: true });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ success: false, message: 'Google Signup Error' });
+  }
+});
+
 // Route to fetch all data of a user based on username
 app.get('/api/user/:username', async (req, res) => {
   const { username } = req.params;
