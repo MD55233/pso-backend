@@ -160,17 +160,12 @@ app.post('/api/signup', async (req, res) => {
       phoneNumber,
       password,
       referralDetails: {
-        referralCode: referrer ? referrer.username : null,
-        referrer: referrer ? referrer._id : null,
+        referralCode: referrer ? referrer.username : null, // Set referralCode to referrer’s username
+        referrer: referrer ? referrer._id : null, // Store referrer’s ObjectId for reference
       },
     });
 
     await newUser.save();
-
-    // Log SMTP details
-    console.log('Preparing to send email...');
-    console.log('SMTP_EMAIL:', process.env.SMTP_EMAIL);
-    console.log('Recipient Email:', email);
 
     // Send Email
     await transporter.sendMail({
@@ -179,34 +174,17 @@ app.post('/api/signup', async (req, res) => {
       subject: 'Welcome to Our Platform',
       text: `Hello ${fullName},\n\nYour account has been created.\nUsername: ${username}\nPassword: ${password}\nReferral Code: ${referrer ? referrer.username : 'None'}\n\nThank you!`,
     });
-    
-    console.log('Email sent successfully.');
+
     res.json({ success: true });
   } catch (err) {
-    console.error('Error occurred:', err);
     if (err.code === 11000) {
+      // Duplicate key error (e.g., email or username already exists)
       return res.status(400).json({ success: false, message: 'Email or username already exists. Please use a different one.' });
     }
-    if (err.response) {
-      console.error('SMTP Error Response:', err.response);
-    }
-    if (err.responseCode) {
-      console.error('SMTP Error Response Code:', err.responseCode);
-    }
+    console.error(err);
     res.status(500).json({ success: false, message: 'Server Error' });
   }
-   await transporter.sendMail({
-  from: process.env.SMTP_EMAIL,
-  to: email,
-  subject: 'Welcome to Our Platform',
-  text: `Hello ${fullName},\n\nYour account has been created.\nUsername: ${username}\nPassword: ${password}\nReferral Code: ${referrer ? referrer.username : 'None'}\n\nThank you!`,
-}).then(() => {
-  console.log('Email sent successfully');
-}).catch(err => {
-  console.error('Error sending email:', err.message);
-  throw err;
 });
-
 // Route to fetch all data of a user based on username
 app.get('/api/user/:username', async (req, res) => {
   const { username } = req.params;
