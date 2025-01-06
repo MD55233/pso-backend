@@ -167,12 +167,34 @@ app.post('/api/signup', async (req, res) => {
 
     await newUser.save();
 
+  
+  
     // Send Email
     await transporter.sendMail({
-      from: process.env.SMTP_EMAIL,
+      from: `LaikoStar.Team <${process.env.SMTP_EMAIL}>`,
       to: email,
-      subject: 'Welcome to Our Platform',
-      text: `Hello ${fullName},\n\nYour account has been created.\nUsername: ${username}\nPassword: ${password}\nReferral Code: ${referrer ? referrer.username : 'None'}\n\nThank you!`,
+      subject: 'Welcome to Our Platform!',
+      html: `
+        <div style="font-family: Arial, sans-serif; line-height: 1.6; color: #333;">
+          <h2 style="color: #4CAF50; text-align: center;">Welcome to Our Platform, ${fullName}!</h2>
+          <p>We are thrilled to have you on board. Your account has been successfully created, and here are your details:</p>
+          <div style="border: 1px solid #ddd; padding: 15px; border-radius: 5px; background: #f9f9f9;">
+            <p><strong>Username:</strong> ${username}</p>
+            <p><strong>Password:</strong> ${password}</p>
+            <p><strong>Referral Code:</strong> ${referrer ? referrer.username : 'None'}</p>
+          </div>
+          <p>Please keep these details safe and secure. You can use them to log in to your account anytime.</p>
+          <h3 style="color: #4CAF50;">Get Started</h3>
+          <p>Click the button below to log in to your account:</p>
+          <div style="text-align: center; margin: 20px 0;">
+            <a href="https://account.laikostar.com/pages/login/login3" 
+               style="text-decoration: none; padding: 10px 20px; color: white; background-color: #4CAF50; border-radius: 5px; font-weight: bold;">Log In to Your Account</a>
+          </div>
+          <p>If you have any questions, feel free to reach out to our support team.</p>
+          <p>Thank you for choosing us!</p>
+          <p style="margin-top: 20px;">Warm regards,<br><strong>The Team at Our Platform</strong></p>
+        </div>
+      `,
     });
 
     res.json({ success: true });
