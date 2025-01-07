@@ -131,7 +131,37 @@ const adminSchema = new mongoose.Schema({
 }, { timestamps: true });
 
 const Admin = mongoose.model('Admin', adminSchema);
+// Route to fetch transaction history for a specific user
+app.get('/api/transaction-history/:username', async (req, res) => {
+  const { username } = req.params;
 
+  try {
+    const user = await User.findOne({ username });
+    if (!user) {
+      return res.status(404).json({ message: 'User not found.' });
+    }
+
+    const transactions = user.transactionHistory.map((transaction) => ({
+      ...transaction.toObject(),
+      _id: transaction._id,
+      type: transaction.type || '-',
+      amount: transaction.amount || 0,
+      status: 'completed', // Default status, you can adjust based on your schema
+      accountNumber: '-', // Placeholder
+      gateway: '-', // Placeholder
+      remarks: transaction.description || '-',
+      createdAt: transaction.createdAt,
+    }));
+
+    // Sort transactions by date in descending order
+    transactions.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+
+    res.json(transactions);
+  } catch (error) {
+    console.error('Error fetching transaction history:', error);
+    res.status(500).json({ message: 'Internal server error.' });
+  }
+});
 app.post('/api/signup', async (req, res) => {
   const { fullName, email, phoneNumber, referrerPin } = req.body;
 
@@ -167,9 +197,7 @@ app.post('/api/signup', async (req, res) => {
 
     await newUser.save();
 
-  
-  
-   // Send Email
+    // Send Email
     await transporter.sendMail({
       from: `LaikoStar.Team <${process.env.SMTP_EMAIL}>`,
       to: email,
@@ -194,10 +222,10 @@ app.post('/api/signup', async (req, res) => {
           <p>If you have any questions, feel free to reach out to our support team.</p>
           <p>Thank you for choosing us!</p>
           <p style="margin-top: 20px;">Warm regards,<br><strong>The Team at Our Platform</strong></p>
-          </div>
+        </div>
       `,
     });
-
+    
     res.json({ success: true });
   } catch (err) {
     if (err.code === 11000) {
@@ -276,12 +304,14 @@ const taskSchema = new mongoose.Schema(
     reward: { type: Number, required: true },
     image: { type: String }, // URL to the task image
     completedCount: { type: Number, default: 0 }, 
+    redirectLink: { type: String, required: true }, // New field for redirection link
     createdAt: { type: Date, default: Date.now },
   },
   { timestamps: true }
 );
 
 const TaskModel = mongoose.model('Task', taskSchema);
+
 // TaskTransaction Schema with username
 const taskTransactionSchema = new mongoose.Schema(
   {
@@ -330,86 +360,69 @@ app.get('/api/tasks', async (req, res) => {
     console.error('Error fetching tasks:', error);
     res.status(500).json({ error: 'Internal Server Error', details: error.message });
   }
+  
 });
+
+
 app.post('/api/tasks/:taskId/complete', async (req, res) => {
   const { taskId } = req.params;
   const { username } = req.body;
 
-  // Validate username
   if (!username || typeof username !== 'string') {
     return res.status(400).json({ error: 'Invalid username' });
   }
 
   try {
-    // Find the user by username
     const user = await User.findOne({ username: username });
     if (!user) {
       return res.status(404).json({ error: 'User not found' });
     }
 
-    const today = new Date().toISOString().split('T')[0]; // Today's date in YYYY-MM-DD format
+    const today = new Date().toISOString().split('T')[0];
     const lastCompletedDate = user.lastCompletedDate
       ? user.lastCompletedDate.toISOString().split('T')[0]
       : null;
 
-    // Reset daily tasks if it's a new day
     if (lastCompletedDate !== today) {
       user.tasksCompletedToday = 0;
       user.lastCompletedDate = new Date();
     }
 
-    // Check if the user has exceeded their daily task limit
     if (user.tasksCompletedToday >= user.dailyTaskLimit) {
       return res.status(400).json({ error: 'Daily task limit reached. Please try again tomorrow.' });
     }
 
-    // Find the task
     const task = await TaskModel.findById(taskId);
     if (!task) {
       return res.status(404).json({ error: 'Task not found' });
     }
 
-    // Increment the user's task completion count for the day
     user.tasksCompletedToday += 1;
-
-    // Update the user's pending commission
     user.pendingCommission += task.reward;
-
-    // Increment the task completion count
     task.completedCount = (task.completedCount || 0) + 1;
 
-    // Create a TaskTransaction record
     const transaction = new TaskTransaction({
       username: username,
       taskId: task._id,
       amount: task.reward,
-      status: 'pending', // Transaction status is pending initially
+      status: 'pending',
       description: `Completed task: ${task.name}`,
-      transactionType: 'credit', // Credit for task completion
+      transactionType: 'credit',
     });
 
-    // Save the TaskTransaction, task, and user
     await transaction.save();
     await task.save();
     await user.save();
 
-    // Respond with success message
     res.status(200).json({
       message: 'Task completed successfully',
-      tasksCompletedToday: user.tasksCompletedToday,
-      balance: user.pendingCommission,
-      task: {
-        id: task._id,
-        name: task.name,
-        reward: task.reward,
-      },
+      redirectLink: task.redirectLink,
     });
   } catch (error) {
     console.error('Error completing task:', error);
     res.status(500).json({ error: 'Internal Server Error', details: error.message });
   }
 });
-
 
 // Create a new task with an image upload
 app.post('/api/tasks', uploadFile.single('image'), async (req, res) => {
@@ -613,11 +626,10 @@ app.get('/api/approvals/reject/:username', async (req, res) => {
 const planSchema = new mongoose.Schema({
   name: { type: String, required: true },
   price: { type: Number, required: true },
-  advancePoints: { type: Number, required: true },
-  DirectPoint: { type: Number, required: true },
-  IndirectPoint: { type: Number, required: true },
-  parent: { type: Number, required: true },
-  grandParent: { type: Number, required: true }
+  DailyTaskLimit:{ type: Number, required: true },
+  DirectBonus: { type: Number, required: true },
+  IndirectBonus: { type: Number, required: true },
+ 
 });
 const Plan = mongoose.model('Plan', planSchema);
 
@@ -651,26 +663,25 @@ app.get('/api/users/:username', async (req, res) => {
     res.status(500).json({ message: 'Server error' });
   }
 });
-
+// Referral Payment Verification Schema (updated for consistency)
 const referralPaymentSchema = new mongoose.Schema({
   username: { type: String, required: true },
   transactionId: { type: String, required: true },
   transactionAmount: { type: Number, required: true },
   gateway: { type: String, required: true },
   planName: { type: String, required: true },
-  planPRICE: { type: Number, required: true },
-  advancePoints: { type: Number, required: true },
-  DirectPoint: { type: Number, required: true },
-  IndirectPoint: { type: Number, required: true },
-  refPer: { type: Number, required: true },
-  refParentPer: { type: Number, required: true },
-  referrerPin: { type: String, required: true, unique: true },
+  planPrice: { type: Number, required: true }, // Price of the plan
+  directBonus: { type: Number, required: true }, // Direct bonus points
+  indirectBonus: { type: Number, required: true }, // Indirect bonus points
+  DailyTaskLimit:{ type: Number, required: true },
   imagePath: { type: String, required: true },
   status: { type: String, default: 'pending' }
 }, { timestamps: true });
 
 const ReferralPaymentVerification = mongoose.model('ReferralPaymentVerification', referralPaymentSchema);
 const ReferralApproveds = mongoose.model('ReferralApproveds', referralPaymentSchema);
+
+// Referral Rejected Schema (unchanged)
 const referralRejectedSchema = new mongoose.Schema({
   username: { type: String, required: true },
   transactionId: { type: String, required: true },
@@ -683,7 +694,7 @@ const referralRejectedSchema = new mongoose.Schema({
 
 const ReferralRejected = mongoose.model('ReferralRejected', referralRejectedSchema);
 
-// Multer storage configuration
+// Multer Storage Configuration (unchanged)
 const referralStorage = multer.diskStorage({
   destination: (req, file, cb) => {
     cb(null, '../uploads/referral-plan-payment');
@@ -694,70 +705,52 @@ const referralStorage = multer.diskStorage({
   }
 });
 
-const uploadReferral = multer({ storage: referralStorage });
+const uploadReferral = multer({ storage: referralStorage }).single('image'); // Check this line
 
-//----------------------|| POST route to handle payment verification upload||-------------------
-const generateUniquePin = async () => {
-  let pin;
-  let isUnique = false;
+// API Routes
 
-  while (!isUnique) {
-    pin = Math.random().toString(36).substring(2, 12); // Generate a random 10-character string
-    const existingPin = await ReferralPaymentVerification.findOne({ referrerPin: pin });
-    if (!existingPin) {
-      isUnique = true;
-    }
+app.post('/api/referral-payment/upload', uploadReferral, async (req, res) => {
+  const { username, transactionId, transactionAmount, gateway, planName, planPrice, directBonus, indirectBonus, DailyTaskLimit } = req.body;
+
+  // Validate required fields, including the image
+  if (!username || !transactionId || !transactionAmount || !gateway || !planName || !planPrice || !directBonus || !indirectBonus || !DailyTaskLimit || !req.file) {
+    return res.status(400).json({ message: 'All fields are required, including the image.' });
   }
 
-  return pin;
-};
-
-app.post('/api/referral-payment/upload', uploadReferral.single('image'), async (req, res) => {
   try {
-    // Generate a unique referrer pin
-    const referrerPin = await generateUniquePin();
-
-    // Create a new ReferralPaymentVerification instance
     const newPayment = new ReferralPaymentVerification({
-      username: req.body.username,
-      transactionId: req.body.transactionId,
-      transactionAmount: req.body.transactionAmount,
-      gateway: req.body.gateway,
-      planName: req.body.planName,
-      planPRICE: req.body.planPRICE,
-      advancePoints: req.body.advancePoints,
-      DirectPoint: req.body.DirectPoint,
-      IndirectPoint: req.body.IndirectPoint,
-      refPer: req.body.parent,
-      refParentPer: req.body.grandParent,
-      referrerPin: referrerPin, // Add referrer pin
-      imagePath: req.file.path // Store path to uploaded image
+      username,
+      transactionId,
+      transactionAmount,
+      gateway,
+      planName,
+      planPrice,
+      directBonus,
+      indirectBonus,
+      DailyTaskLimit,
+      imagePath: req.file.path  // Correctly saving the file path
     });
 
-    // Save to MongoDB
     await newPayment.save();
 
-    // Respond with success message
-    res.status(201).json({ message: 'Payment verification details saved successfully.' });
-  } catch (error) {
-    console.error('Error saving payment verification:', error);
-    res.status(500).json({ error: 'Failed to save payment verification details.' });
+    res.json({ message: 'Referral payment request uploaded successfully.' });
+  } catch (err) {
+    res.status(500).json({ message: err.message });
   }
 });
 
-// Endpoint to fetch referral payment verifications by username
+
+// Fetch Referral Payment Verifications by Username
 app.get('/api/referral-payment/:username', async (req, res) => {
-  const { username } = req.params;
-
   try {
-    const referralPayments = await ReferralPaymentVerification.find({ username: username });
-    res.json(referralPayments);
+    const { username } = req.params;
+    const payments = await ReferralPaymentVerification.find({ username }).populate('referrer', 'username');
+    res.json(payments);
   } catch (error) {
-    console.error('Error fetching referral payment verifications:', error);
-    res.status(500).json({ error: 'Failed to fetch referral payment verifications.' });
+    console.error('Error fetching referral payments:', error);
+    res.status(500).json({ error: 'Failed to fetch referral payments.' });
   }
 });
-
 // Fetch approvals by username
 app.get('/api/approvals/referral/approve/:username', async (req, res) => {
   const { username } = req.params;
@@ -782,6 +775,26 @@ app.get('/api/approvals/referral/reject/:username', async (req, res) => {
   }
 });
 
+app.get('/api/user/transactions/:username', async (req, res) => {
+  const { username } = req.params;
+
+  try {
+    const referralPayments = await ReferralPaymentVerification.find({ username });
+    const approvedPayments = await ReferralApproveds.find({ username });
+    const rejectedPayments = await ReferralRejected.find({ username });
+
+    const transactions = [
+      ...referralPayments.map(item => ({ ...item.toObject(), type: 'Referral Payment Verification', status: item.status })),
+      ...approvedPayments.map(item => ({ ...item.toObject(), type: 'Approved Referral Payment', status: 'approved' })),
+      ...rejectedPayments.map(item => ({ ...item.toObject(), type: 'Rejected Referral Payment', status: 'rejected' }))
+    ];
+
+    res.json(transactions);
+  } catch (err) {
+    console.error('Error fetching transactions:', err);
+    res.status(500).send('Server error');
+  }
+});
 
 // User Accounts Model
 const userAccountsSchema = new mongoose.Schema(
@@ -967,6 +980,7 @@ app.get('/api/user/:username', async (req, res) => {
   }
 });
 // Endpoint to get the count of direct referrals
+// Endpoint to get the count of direct and indirect referrals
 app.get('/api/referrals', async (req, res) => {
   const { username } = req.query;
 
@@ -978,14 +992,30 @@ app.get('/api/referrals', async (req, res) => {
       return res.status(404).json({ message: 'User not found' });
     }
 
-    // Count the number of users who have the main user's _id as their parent
-    const directReferralsCount = await User.countDocuments({ parent: mainUser._id });
-    const directReferral = await User.findOne({ parent: mainUser._id });
-    const IndirectReferralsCount = await User.countDocuments({ parent: directReferral._id });
+    // Count direct referrals (users whose `referralDetails.referrer` matches the main user's _id)
+    const directReferralsCount = await User.countDocuments({ 
+      'referralDetails.referrer': mainUser._id 
+    });
 
-    return res.json({ DirectCount: directReferralsCount, IndirectCount: IndirectReferralsCount });
+    // Find direct referrals to count indirect referrals
+    const directReferrals = await User.find({ 
+      'referralDetails.referrer': mainUser._id 
+    });
+
+    // Extract the IDs of direct referrals
+    const directReferralIds = directReferrals.map(referral => referral._id);
+
+    // Count indirect referrals (users whose `referralDetails.referrer` is one of the direct referral IDs)
+    const indirectReferralsCount = await User.countDocuments({ 
+      'referralDetails.referrer': { $in: directReferralIds } 
+    });
+
+    return res.json({
+      DirectCount: directReferralsCount,
+      IndirectCount: indirectReferralsCount,
+    });
   } catch (error) {
-    console.error('Error counting direct referrals:', error);
+    console.error('Error counting referrals:', error);
     return res.status(500).json({ message: 'Internal server error' });
   }
 });
@@ -1109,12 +1139,64 @@ const withdrawalRequestSchema = new mongoose.Schema(
 
 const WithdrawalRequest = mongoose.model('WithdrawalRequest', withdrawalRequestSchema);
 
-// Submit a withdrawal request (User Side - No remarks, status is 'pending')
-// Submit a withdrawal request (User Side - Balance validation included)
-app.post('/api/withdraw-balance', async (req, res) => {
+
+
+const systemSettingsSchema = new mongoose.Schema({
+  withdrawalEnabled: {
+    type: Boolean,
+    default: true, // Default to withdrawals being enabled
+  },
+});
+
+const SystemSettings = mongoose.model('SystemSettings', systemSettingsSchema);
+
+
+// Middleware to check withdrawal status
+const checkWithdrawalStatus = async (req, res, next) => {
+  try {
+    const settings = await SystemSettings.findOne();
+    if (!settings || !settings.withdrawalEnabled) {
+      return res.status(403).json({ message: 'Withdrawals are currently disabled' });
+    }
+    next();
+  } catch (error) {
+    console.error('Error checking withdrawal status:', error);
+    res.status(500).json({ message: 'Internal server error' });
+  }
+};
+
+
+// Get current withdrawal status
+app.get('/api/settings/withdrawal-status', async (req, res) => {
+  try {
+    const settings = await SystemSettings.findOne();
+    if (!settings) {
+      return res.status(404).json({ message: 'Settings not found' });
+    }
+    res.status(200).json({ withdrawalEnabled: settings.withdrawalEnabled });
+  } catch (error) {
+    res.status(500).json({ message: 'Error fetching withdrawal status', error });
+  }
+});
+
+
+// Submit a withdrawal request
+app.post('/api/withdraw-balance', checkWithdrawalStatus, async (req, res) => {
   const { username, withdrawAmount, gateway, accountNumber, accountTitle } = req.body;
 
   try {
+    // Get current day and time
+    const now = new Date();
+    const currentDay = now.getDay(); // 0 = Sunday, 1 = Monday, ..., 6 = Saturday
+    const currentHour = now.getHours(); // 0 to 23
+
+    // Check if the current day and time are within the allowed range
+    if (currentDay < 1 || currentDay > 4 || currentHour < 10 || currentHour >= 22) {
+      return res.status(403).json({
+        message: 'Withdrawals are allowed only from Monday to Thursday, between 10:00 AM and 10:00 PM.'
+      });
+    }
+
     // Find the user by username
     const user = await User.findOne({ username });
     if (!user) {
@@ -1126,7 +1208,7 @@ app.post('/api/withdraw-balance', async (req, res) => {
       return res.status(400).json({ message: 'Insufficient balance for withdrawal.' });
     }
 
-    // Create and save new withdrawal request (Balance not deducted here, status is pending)
+    // Create and save new withdrawal request (Balance not deducted here; status is pending)
     const newWithdrawalRequest = new WithdrawalRequest({
       userId: user._id,
       amount: withdrawAmount,
@@ -1134,20 +1216,18 @@ app.post('/api/withdraw-balance', async (req, res) => {
       accountTitle,
       gateway,
       status: 'pending', // Status is pending by default
-      createdAt: new Date(), // Optional: track request creation time
     });
     await newWithdrawalRequest.save();
 
-    res.status(200).json({ 
-      message: 'Withdrawal request submitted successfully.', 
-      requestId: newWithdrawalRequest._id 
+    res.status(200).json({
+      message: 'Withdrawal request submitted successfully.',
+      requestId: newWithdrawalRequest._id
     });
   } catch (error) {
     console.error('Error processing withdrawal request:', error);
     res.status(500).json({ message: 'Internal server error' });
   }
 });
-
 
 // Fetch withdrawal requests (Transactions) for the user
 app.get('/api/withdrawals/:username', async (req, res) => {
