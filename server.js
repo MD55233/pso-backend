@@ -174,14 +174,7 @@ app.post('/api/signup', async (req, res) => {
       return res.status(400).json({ success: false, message: 'Email already exists. Please use a different email.' });
     }
 
-    // Check if the referrerPin matches an existing username
-    let referrer = null;
-    if (referrerPin) {
-      referrer = await User.findOne({ username: referrerPin });
-      if (!referrer) {
-        return res.status(400).json({ success: false, message: 'Invalid referral code (referrerPin). Please check and try again.' });
-      }
-    }
+  
 
     const { username, password } = generateCredentials();
 
