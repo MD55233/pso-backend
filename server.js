@@ -76,7 +76,7 @@ const userSchema = new mongoose.Schema(
     accountType: { type: String, required: true,  default: 'Starter' }, // e.g., "Starter", "Pro", "Premium"
     balance: { type: Number, default: 0 },
     withdrawalBalance: { type: Number, default: 0 },
-    dailyTaskLimit: { type: Number, required: true , default: 10 },
+    dailyTaskLimit: { type: Number, required: true , default: 0},
     lastCompletedDate: { type: Date, default: null },
     tasksCompletedToday: { type: Number, default: 0 },
     bonusBalance: { type: Number, default: 0 },
@@ -162,6 +162,8 @@ app.get('/api/transaction-history/:username', async (req, res) => {
     res.status(500).json({ message: 'Internal server error.' });
   }
 });
+
+
 app.post('/api/signup', async (req, res) => {
   const { fullName, email, phoneNumber, referrerPin } = req.body;
 
@@ -172,10 +174,17 @@ app.post('/api/signup', async (req, res) => {
       return res.status(400).json({ success: false, message: 'Email already exists. Please use a different email.' });
     }
 
-    // Generate credentials
+    // Check if the referrerPin matches an existing username
+    let referrer = null;
+    if (referrerPin) {
+      referrer = await User.findOne({ username: referrerPin });
+      if (!referrer) {
+        return res.status(400).json({ success: false, message: 'Invalid referral code (referrerPin). Please check and try again.' });
+      }
+    }
+
     const { username, password } = generateCredentials();
 
-    // Create new user object
     const newUser = new User({
       fullName,
       username,
@@ -183,15 +192,14 @@ app.post('/api/signup', async (req, res) => {
       phoneNumber,
       password,
       referralDetails: {
-        referralCode: referrerPin || null, // Set referralCode as provided or null if not provided
-        referrer: null, // Referrer is not linked to an existing user
+        referralCode: referrer ? referrer.username : null, // Set referralCode to referrer’s username
+        referrer: referrer ? referrer._id : null, // Store referrer’s ObjectId for reference
       },
     });
 
-    // Save the new user to the database
     await newUser.save();
 
-    // Send email with account details
+    // Send Email
     await transporter.sendMail({
       from: `LaikoStar.Team <${process.env.SMTP_EMAIL}>`,
       to: email,
@@ -199,12 +207,12 @@ app.post('/api/signup', async (req, res) => {
       html: `
         <div style="font-family: Arial, sans-serif; line-height: 1.6; color: #333;">
           <h2 style="color: #4CAF50; text-align: center;">Welcome to Our Platform,</h2>
-          <h2 style="color: #4CAF50; text-align: center;">${fullName}!</h2>
+            <h2 style="color: #4CAF50; text-align: center;"> ${fullName}!</h2>
           <p>We are thrilled to have you on board. Your account has been successfully created, and here are your details:</p>
           <div style="border: 1px solid #ddd; padding: 15px; border-radius: 5px; background: #f9f9f9;">
             <p><strong>Username:</strong> ${username}</p>
             <p><strong>Password:</strong> ${password}</p>
-            <p><strong>Referral Code:</strong> ${referrerPin || 'None'}</p>
+            <p><strong>Referral Code:</strong> ${referrer ? referrer.username : 'None'}</p>
           </div>
           <p>Please keep these details safe and secure. You can use them to log in to your account anytime.</p>
           <h3 style="color: #4CAF50;">Get Started</h3>
@@ -219,18 +227,17 @@ app.post('/api/signup', async (req, res) => {
         </div>
       `,
     });
-
+    
     res.json({ success: true });
   } catch (err) {
     if (err.code === 11000) {
-      // Handle duplicate key error
+      // Duplicate key error (e.g., email or username already exists)
       return res.status(400).json({ success: false, message: 'Email or username already exists. Please use a different one.' });
     }
     console.error(err);
     res.status(500).json({ success: false, message: 'Server Error' });
   }
 });
-
 // Route to fetch all data of a user based on username
 app.get('/api/user/:username', async (req, res) => {
   const { username } = req.params;
@@ -903,55 +910,81 @@ const UserPending = mongoose.model('UserPending', userPendingSchema);
 
 // ]-----------------------||Endpoint for user signup||------------------------[
 
+
 app.post('/api/signup', async (req, res) => {
-  const { fullName, username, email, password, phoneNumber, referrerPin } = req.body;
+  const { fullName, email, phoneNumber, referrerPin } = req.body;
 
   try {
-    // Check if referrerPin exists in UserPending
-    const userPending = await UserPending.findOne({ referrerPin });
-    if (!userPending) {
-      return res.status(400).json({ success: false, message: 'Invalid referrer PIN' });
-    }
-
-    // Check if the email or username already exists in the User model
-    const existingUser = await User.findOne({ $or: [{ email }, { username }] });
+    // Check if email already exists
+    const existingUser = await User.findOne({ email });
     if (existingUser) {
-      return res.status(400).json({ success: false, message: 'Email or username already taken' });
+      return res.status(400).json({ success: false, message: 'Email already exists. Please use a different email.' });
     }
 
-    // Create a new user based on the form data and UserPending document
+    // Check if the referrerPin matches an existing username
+    let referrer = null;
+    if (referrerPin) {
+      referrer = await User.findOne({ username: referrerPin });
+      if (!referrer) {
+        return res.status(400).json({ success: false, message: 'Invalid referral code (referrerPin). Please check and try again.' });
+      }
+    }
+
+    const { username, password } = generateCredentials();
+
     const newUser = new User({
       fullName,
       username,
       email,
-      password,
       phoneNumber,
-      plan: userPending.planName,
-      rank: '',
-      refPer: userPending.refPer,
-      refParentPer: userPending.refParentPer,
-      parent: userPending.referrerId,
-      advancePoints: userPending.advancePoints,
-      // Initialize other fields as needed
-      balance: 0,
-      totalPoints: 0,
-      directPoints: 0,
-      indirectPoints: 0,
-      trainingBonusBalance: 0
+      password,
+      referralDetails: {
+        referralCode: referrer ? referrer.username : null, // Set referralCode to referrer’s username
+        referrer: referrer ? referrer._id : null, // Store referrer’s ObjectId for reference
+      },
     });
 
-    // Save the new user to the database
     await newUser.save();
-    await UserPending.findByIdAndRemove(userPending.id);
 
-    // Respond with success
-    res.status(201).json({ success: true, message: 'User registered successfully!' });
-  } catch (error) {
-    console.error('Error during registration:', error);
-    res.status(500).json({ success: false, message: 'Server error. Please try again later.' });
+    // Send Email
+    await transporter.sendMail({
+      from: `LaikoStar.Team <${process.env.SMTP_EMAIL}>`,
+      to: email,
+      subject: 'Welcome to Our Platform!',
+      html: `
+        <div style="font-family: Arial, sans-serif; line-height: 1.6; color: #333;">
+          <h2 style="color: #4CAF50; text-align: center;">Welcome to Our Platform,</h2>
+            <h2 style="color: #4CAF50; text-align: center;"> ${fullName}!</h2>
+          <p>We are thrilled to have you on board. Your account has been successfully created, and here are your details:</p>
+          <div style="border: 1px solid #ddd; padding: 15px; border-radius: 5px; background: #f9f9f9;">
+            <p><strong>Username:</strong> ${username}</p>
+            <p><strong>Password:</strong> ${password}</p>
+            <p><strong>Referral Code:</strong> ${referrer ? referrer.username : 'None'}</p>
+          </div>
+          <p>Please keep these details safe and secure. You can use them to log in to your account anytime.</p>
+          <h3 style="color: #4CAF50;">Get Started</h3>
+          <p>Click the button below to log in to your account:</p>
+          <div style="text-align: center; margin: 20px 0;">
+            <a href="https://account.laikostar.com/pages/login/login3" 
+               style="text-decoration: none; padding: 10px 20px; color: white; background-color: #4CAF50; border-radius: 5px; font-weight: bold;">Log In to Your Account</a>
+          </div>
+          <p>If you have any questions, feel free to reach out to our support team.</p>
+          <p>Thank you for choosing us!</p>
+          <p style="margin-top: 20px;">Warm regards,<br><strong>The Team at Our Platform</strong></p>
+        </div>
+      `,
+    });
+    
+    res.json({ success: true });
+  } catch (err) {
+    if (err.code === 11000) {
+      // Duplicate key error (e.g., email or username already exists)
+      return res.status(400).json({ success: false, message: 'Email or username already exists. Please use a different one.' });
+    }
+    console.error(err);
+    res.status(500).json({ success: false, message: 'Server Error' });
   }
 });
-
 // ]----------------------------||Get Total Balance||-----------------------------[
 
 app.get('/api/user/:username', async (req, res) => {
@@ -1186,9 +1219,9 @@ app.post('/api/withdraw-balance', checkWithdrawalStatus, async (req, res) => {
     const currentHour = now.getHours(); // 0 to 23
 
     // Check if the current day and time are within the allowed range
-    if (currentDay < 1 || currentDay > 4 || currentHour < 10 || currentHour >= 22) {
+    if (currentDay < 1 || currentDay > 4 || currentHour < 10 || currentHour >= 17) {
       return res.status(403).json({
-        message: 'Withdrawals are allowed only from Monday to Thursday, between 10:00 AM and 10:00 PM.'
+        message: 'Withdrawals are allowed only from Monday to Thursday, between 10:00 AM and 5:00 PM.'
       });
     }
 
