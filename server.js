@@ -172,7 +172,13 @@ app.post('/api/signup', async (req, res) => {
       return res.status(400).json({ success: false, message: 'Email already exists. Please use a different email.' });
     }
 
-    // Check if the referrerPin matches an existing username
+    // Check if username already exists
+    const existingUsername = await User.findOne({ username: referrerPin });
+    if (existingUsername) {
+      return res.status(400).json({ success: false, message: 'Username already exists. Please use a different username.' });
+    }
+
+    // Check if referrerPin matches an existing username
     let referrer = null;
     if (referrerPin) {
       referrer = await User.findOne({ username: referrerPin });
@@ -181,8 +187,10 @@ app.post('/api/signup', async (req, res) => {
       }
     }
 
+    // Generate credentials
     const { username, password } = generateCredentials();
 
+    // Create new user
     const newUser = new User({
       fullName,
       username,
@@ -205,7 +213,7 @@ app.post('/api/signup', async (req, res) => {
       html: `
         <div style="font-family: Arial, sans-serif; line-height: 1.6; color: #333;">
           <h2 style="color: #4CAF50; text-align: center;">Welcome to Our Platform,</h2>
-            <h2 style="color: #4CAF50; text-align: center;"> ${fullName}!</h2>
+          <h2 style="color: #4CAF50; text-align: center;">${fullName}!</h2>
           <p>We are thrilled to have you on board. Your account has been successfully created, and here are your details:</p>
           <div style="border: 1px solid #ddd; padding: 15px; border-radius: 5px; background: #f9f9f9;">
             <p><strong>Username:</strong> ${username}</p>
@@ -225,7 +233,7 @@ app.post('/api/signup', async (req, res) => {
         </div>
       `,
     });
-    
+
     res.json({ success: true });
   } catch (err) {
     if (err.code === 11000) {
@@ -236,6 +244,7 @@ app.post('/api/signup', async (req, res) => {
     res.status(500).json({ success: false, message: 'Server Error' });
   }
 });
+
 // Route to fetch all data of a user based on username
 app.get('/api/user/:username', async (req, res) => {
   const { username } = req.params;
