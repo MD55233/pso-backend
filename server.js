@@ -172,25 +172,10 @@ app.post('/api/signup', async (req, res) => {
       return res.status(400).json({ success: false, message: 'Email already exists. Please use a different email.' });
     }
 
-    // Check if username already exists
-    const existingUsername = await User.findOne({ username: referrerPin });
-    if (existingUsername) {
-      return res.status(400).json({ success: false, message: 'Username already exists. Please use a different username.' });
-    }
-
-    // Check if referrerPin matches an existing username
-    let referrer = null;
-    if (referrerPin) {
-      referrer = await User.findOne({ username: referrerPin });
-      if (!referrer) {
-        return res.status(400).json({ success: false, message: 'Invalid referral code (referrerPin). Please check and try again.' });
-      }
-    }
-
     // Generate credentials
     const { username, password } = generateCredentials();
 
-    // Create new user
+    // Create new user object
     const newUser = new User({
       fullName,
       username,
@@ -198,14 +183,15 @@ app.post('/api/signup', async (req, res) => {
       phoneNumber,
       password,
       referralDetails: {
-        referralCode: referrer ? referrer.username : null, // Set referralCode to referrer’s username
-        referrer: referrer ? referrer._id : null, // Store referrer’s ObjectId for reference
+        referralCode: referrerPin || null, // Set referralCode as provided or null if not provided
+        referrer: null, // Referrer is not linked to an existing user
       },
     });
 
+    // Save the new user to the database
     await newUser.save();
 
-    // Send Email
+    // Send email with account details
     await transporter.sendMail({
       from: `LaikoStar.Team <${process.env.SMTP_EMAIL}>`,
       to: email,
@@ -218,7 +204,7 @@ app.post('/api/signup', async (req, res) => {
           <div style="border: 1px solid #ddd; padding: 15px; border-radius: 5px; background: #f9f9f9;">
             <p><strong>Username:</strong> ${username}</p>
             <p><strong>Password:</strong> ${password}</p>
-            <p><strong>Referral Code:</strong> ${referrer ? referrer.username : 'None'}</p>
+            <p><strong>Referral Code:</strong> ${referrerPin || 'None'}</p>
           </div>
           <p>Please keep these details safe and secure. You can use them to log in to your account anytime.</p>
           <h3 style="color: #4CAF50;">Get Started</h3>
@@ -237,7 +223,7 @@ app.post('/api/signup', async (req, res) => {
     res.json({ success: true });
   } catch (err) {
     if (err.code === 11000) {
-      // Duplicate key error (e.g., email or username already exists)
+      // Handle duplicate key error
       return res.status(400).json({ success: false, message: 'Email or username already exists. Please use a different one.' });
     }
     console.error(err);
