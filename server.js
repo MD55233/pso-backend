@@ -81,7 +81,7 @@ const userSchema = new mongoose.Schema(
     tasksCompletedToday: { type: Number, default: 0 },
     bonusBalance: { type: Number, default: 0 },
     referralDetails: {
-      referralCode: { type: String, unique: true },
+      referralCode: { type: String },
       referrer: { type: mongoose.Schema.Types.ObjectId, ref: 'User', default: null },
     },
     taskHistory: [
