@@ -69,9 +69,9 @@ app.use(cors());
 const userSchema = new mongoose.Schema(
   {
     fullName: { type: String, required: true, trim: true },
-    username: { type: String, required: true, unique: true, trim: true },
-    password: { type: String, required: true },
-    email: { type: String, required: true, unique: true, trim: true },
+    username: { type: String, required: true,  unique: true },
+    password: { type: String, required: true , unique: true },
+    email: { type: String, required: true},
     phoneNumber: { type: String, required: true },
     accountType: { type: String, required: true,  default: 'Starter' }, // e.g., "Starter", "Pro", "Premium"
     balance: { type: Number, default: 0 },
@@ -82,7 +82,7 @@ const userSchema = new mongoose.Schema(
     bonusBalance: { type: Number, default: 0 },
     referralDetails: {
       referralCode: { type: String },
-      referrer: { type: mongoose.Schema.Types.ObjectId, ref: 'User', default: null },
+      referrer: { type: mongoose.Schema.Types.ObjectId, ref: 'User'},
     },
     taskHistory: [
       {
@@ -162,8 +162,6 @@ app.get('/api/transaction-history/:username', async (req, res) => {
     res.status(500).json({ message: 'Internal server error.' });
   }
 });
-
-
 app.post('/api/signup', async (req, res) => {
   const { fullName, email, phoneNumber, referrerPin } = req.body;
 
@@ -174,7 +172,14 @@ app.post('/api/signup', async (req, res) => {
       return res.status(400).json({ success: false, message: 'Email already exists. Please use a different email.' });
     }
 
-  
+    // Check if the referrerPin matches an existing username
+    let referrer = null;
+    if (referrerPin) {
+      referrer = await User.findOne({ username: referrerPin });
+      if (!referrer) {
+        return res.status(400).json({ success: false, message: 'Invalid referral code (referrerPin). Please check and try again.' });
+      }
+    }
 
     const { username, password } = generateCredentials();
 
@@ -225,10 +230,10 @@ app.post('/api/signup', async (req, res) => {
   } catch (err) {
     if (err.code === 11000) {
       // Duplicate key error (e.g., email or username already exists)
-      return res.status(400).json({ success: false, message: 'Email or username already exists. Please use a different one.' });
+      return res.status(400).json({ success: false, message: 'try again 222' });
     }
     console.error(err);
-    res.status(500).json({ success: false, message: 'Server Error' });
+    res.status(500).json({ success: false, message: 'Server 333Error' });
   }
 });
 // Route to fetch all data of a user based on username
@@ -903,81 +908,6 @@ const UserPending = mongoose.model('UserPending', userPendingSchema);
 
 // ]-----------------------||Endpoint for user signup||------------------------[
 
-
-app.post('/api/signup', async (req, res) => {
-  const { fullName, email, phoneNumber, referrerPin } = req.body;
-
-  try {
-    // Check if email already exists
-    const existingUser = await User.findOne({ email });
-    if (existingUser) {
-      return res.status(400).json({ success: false, message: 'Email already exists. Please use a different email.' });
-    }
-
-    // Check if the referrerPin matches an existing username
-    let referrer = null;
-    if (referrerPin) {
-      referrer = await User.findOne({ username: referrerPin });
-      if (!referrer) {
-        return res.status(400).json({ success: false, message: 'Invalid referral code (referrerPin). Please check and try again.' });
-      }
-    }
-
-    const { username, password } = generateCredentials();
-
-    const newUser = new User({
-      fullName,
-      username,
-      email,
-      phoneNumber,
-      password,
-      referralDetails: {
-        referralCode: referrer ? referrer.username : null, // Set referralCode to referrer’s username
-        referrer: referrer ? referrer._id : null, // Store referrer’s ObjectId for reference
-      },
-    });
-
-    await newUser.save();
-
-    // Send Email
-    await transporter.sendMail({
-      from: `LaikoStar.Team <${process.env.SMTP_EMAIL}>`,
-      to: email,
-      subject: 'Welcome to Our Platform!',
-      html: `
-        <div style="font-family: Arial, sans-serif; line-height: 1.6; color: #333;">
-          <h2 style="color: #4CAF50; text-align: center;">Welcome to Our Platform,</h2>
-            <h2 style="color: #4CAF50; text-align: center;"> ${fullName}!</h2>
-          <p>We are thrilled to have you on board. Your account has been successfully created, and here are your details:</p>
-          <div style="border: 1px solid #ddd; padding: 15px; border-radius: 5px; background: #f9f9f9;">
-            <p><strong>Username:</strong> ${username}</p>
-            <p><strong>Password:</strong> ${password}</p>
-            <p><strong>Referral Code:</strong> ${referrer ? referrer.username : 'None'}</p>
-          </div>
-          <p>Please keep these details safe and secure. You can use them to log in to your account anytime.</p>
-          <h3 style="color: #4CAF50;">Get Started</h3>
-          <p>Click the button below to log in to your account:</p>
-          <div style="text-align: center; margin: 20px 0;">
-            <a href="https://account.laikostar.com/pages/login/login3" 
-               style="text-decoration: none; padding: 10px 20px; color: white; background-color: #4CAF50; border-radius: 5px; font-weight: bold;">Log In to Your Account</a>
-          </div>
-          <p>If you have any questions, feel free to reach out to our support team.</p>
-          <p>Thank you for choosing us!</p>
-          <p style="margin-top: 20px;">Warm regards,<br><strong>The Team at Our Platform</strong></p>
-        </div>
-      `,
-    });
-    
-    res.json({ success: true });
-  } catch (err) {
-    if (err.code === 11000) {
-      // Duplicate key error (e.g., email or username already exists)
-      return res.status(400).json({ success: false, message: 'Email or username already exists. Please use a different one.' });
-    }
-    console.error(err);
-    res.status(500).json({ success: false, message: 'Server Error' });
-  }
-});
 // ]----------------------------||Get Total Balance||-----------------------------[
 
 app.get('/api/user/:username', async (req, res) => {
@@ -1405,5 +1335,41 @@ app.get('/api/admin/whatsapp/contacts', async (req, res) => {
   } catch (err) {
     console.error('Error fetching WhatsApp contacts:', err);
     res.status(500).json({ message: 'Server error' });
+  }
+});
+
+
+
+
+const PaymentAccountSchema = new mongoose.Schema({
+  platform: {
+    type: String,
+    required: true,
+  },
+  platformImage: {
+    type: String,
+    required: true,
+  },
+  accountTitle: {
+    type: String,
+    required: true,
+  },
+  accountNumber: {
+    type: String,
+    required: true,
+    unique: true, // Ensure account numbers are unique
+  },
+}, { timestamps: true });
+
+const PaymentAccount = mongoose.model('PaymentAccount', PaymentAccountSchema);
+
+
+// Get all payment accounts
+app.get('/payment-accounts', async (req, res) => {
+  try {
+    const accounts = await PaymentAccount.find();
+    res.status(200).json(accounts);
+  } catch (error) {
+    res.status(500).json({ message: 'Error fetching payment accounts', error });
   }
 });
